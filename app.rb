@@ -1,13 +1,25 @@
-require 'rspec'
 # frozen_string_literal: true
 
 # File: app.rb
 
-# WRITE YOUR CLASSES HERE
+require 'rspec'
+require 'pry-byebug'
 
-# Create two different parser, one for comma, and one for the dollar sign
-# Each new parser class should have a parse method that will parse the given data
-# Ater parsing both data, the two resulting arrays should be combined into one big array
+CITIES = {
+  'NYC' => 'New York City',
+  'LA' => 'Los Angeles'
+}.freeze
+
+# Some parser helper methods
+module ParserHelpers
+  def replace_dash_with_fwdslash(str)
+    str.gsub('-', '/')
+  end
+
+  def get_city_from_abbr(city)
+    CITIES.fetch(city, 'Not available')
+  end
+end
 
 Person = Struct.new(:first_name, :city, :birth_date) do
   def to_s
@@ -15,9 +27,9 @@ Person = Struct.new(:first_name, :city, :birth_date) do
   end
 end
 
-# Parser for the comma separated data
+# Parser for the comma separated values
 class CommaParser
-  attr_reader :data, :result
+  attr_reader :data
 
   def initialize(data)
     @data = data
@@ -40,21 +52,67 @@ class CommaParser
 
     data.each do |row|
       info = parse_row(row)
-      result << Person.new(info[0], info[1], info[2]).to_s
+      result << Person.new(info[0], info[1], info[2])
     end
 
     result
   end
 end
 
-# Parser for the dollar sign separated data
+# Parser for the dollar sign separated values
 class DollarSignParser
+  include ParserHelpers
+
+  attr_reader :data
+  def initialize(data)
+    @data = data
+  end
+
+  def parse
+    return data if data.empty?
+
+    personify.map(&:to_s)
+  end
+
+  private
+
+  def parse_row(person)
+    person.split('$').map(&:strip)
+  end
+
+  def personify
+    result = []
+
+    data.each do |row|
+      info = parse_row(row)
+      city = get_city_from_abbr(info[0])
+      birth_date = replace_dash_with_fwdslash(info[1])
+      result << Person.new(info[3], city, birth_date)
+    end
+
+    result
+  end
+end
+
+class PeopleFactory
+  PARSERS = {
+    comma: CommaParser,
+    dollar: DollarSignParser
+  }.freeze
+
+  def self.build(params)
+    result = []
+    params.each do |k, v|
+      result += PARSERS[k].new(v).parse
+    end
+
+    result
+  end
 end
 
 class PeopleController
   def self.normalize(request_params)
-    # TODO
-    CommaParser.new(request_params[:comma]).parse
+    PeopleFactory.build(request_params)
   end
 end
 
@@ -73,7 +131,7 @@ PeopleController.normalize(
 
 # SPECS
 
-RSpec.describe 'PeopleController' do
+RSpec.describe PeopleController do
   let(:request_params) do
     {
       comma: [
@@ -103,7 +161,7 @@ RSpec.describe 'PeopleController' do
   end
 end
 
-RSpec.describe 'CommaParser' do
+RSpec.describe CommaParser do
   subject { CommaParser.new(data) }
   let(:data) do
     ['Mckayla, Atlanta, 5/29/1986', 'Elliot, New York City, 4/3/1947']
@@ -111,6 +169,32 @@ RSpec.describe 'CommaParser' do
 
   let(:expected_result) do
     ['Mckayla Atlanta 5/29/1986', 'Elliot New York City 4/3/1947']
+  end
+
+  describe '#parse' do
+    context 'when data is empty' do
+      let(:data) { [] }
+      it 'returns an empty array' do
+        expect(subject.parse).to eq []
+      end
+    end
+
+    context 'when data is not empty' do
+      it 'returns an array with the parsed data' do
+        expect(subject.parse).to eq expected_result
+      end
+    end
+  end
+end
+
+RSpec.describe DollarSignParser do
+  subject { DollarSignParser.new(data) }
+  let(:data) do
+    ['LA $ 10-4-1974 $ Nolan $ Rhiannon', 'NYC $ 12-1-1962 $ Bruen $ Rigoberto']
+  end
+
+  let(:expected_result) do
+    ['Rhiannon Los Angeles 10/4/1974', 'Rigoberto New York City 12/1/1962']
   end
 
   describe '#parse' do
