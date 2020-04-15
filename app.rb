@@ -3,15 +3,14 @@
 # File: app.rb
 
 require 'rspec'
-require 'pry-byebug'
 
-CITIES = {
-  'NYC' => 'New York City',
-  'LA' => 'Los Angeles'
-}.freeze
-
-# Some parser helper methods
+# Parser Helper methods
 module ParserHelpers
+  CITIES = {
+    'NYC' => 'New York City',
+    'LA' => 'Los Angeles'
+  }.freeze
+
   def replace_dash_with_fwdslash(str)
     str.gsub('-', '/')
   end
@@ -27,7 +26,7 @@ Person = Struct.new(:first_name, :city, :birth_date) do
   end
 end
 
-# Parser for the comma separated values
+# Parses comma separated values
 class CommaParser
   attr_reader :data
 
@@ -59,7 +58,7 @@ class CommaParser
   end
 end
 
-# Parser for the dollar sign separated values
+# Parses dollar sign separated values
 class DollarSignParser
   include ParserHelpers
 
@@ -94,6 +93,7 @@ class DollarSignParser
   end
 end
 
+# Combines normalized data into a single array
 class PeopleFactory
   PARSERS = {
     comma: CommaParser,
@@ -110,6 +110,7 @@ class PeopleFactory
   end
 end
 
+# People Controller
 class PeopleController
   def self.normalize(request_params)
     PeopleFactory.build(request_params)
@@ -118,11 +119,11 @@ end
 
 PeopleController.normalize(
   {
-    comma: [ # Fields: first name, city name, birth date
+    comma: [
       'Mckayla, Atlanta, 5/29/1986',
       'Elliot, New York City, 4/3/1947'
     ],
-    dollar: [ # Fields: city abbreviation, birth date, last name, first name
+    dollar: [
       'LA $ 10-4-1974 $ Nolan $ Rhiannon',
       'NYC $ 12-1-1962 $ Bruen $ Rigoberto'
     ]
@@ -131,12 +132,15 @@ PeopleController.normalize(
 
 # SPECS
 
+# Specs for the People controller
+
 RSpec.describe PeopleController do
   let(:request_params) do
     {
       comma: [
         'Mckayla, Atlanta, 5/29/1986',
-        'Elliot, New York City, 4/3/1947'
+        'Elliot, New York City, 4/3/1947',
+        'Rodrigo, São Paulo, 4/3/2021'
       ],
       dollar: [
         'LA $ 10-4-1974 $ Nolan $ Rhiannon',
@@ -150,17 +154,21 @@ RSpec.describe PeopleController do
       'Mckayla Atlanta 5/29/1986',
       'Elliot New York City 4/3/1947',
       'Rhiannon Los Angeles 10/4/1974',
-      'Rigoberto New York City 12/1/1962'
+      'Rigoberto New York City 12/1/1962',
+      'Rodrigo São Paulo 4/3/2021'
     ]
   end
 
   describe '.normalize' do
     it 'returns an array with the normalized data' do
-      expect(PeopleController.normalize(request_params)).to eq expected_result
+      expect(PeopleController.normalize(request_params)).to(
+        match_array(expected_result)
+      )
     end
   end
 end
 
+# Specs for the CommaParser
 RSpec.describe CommaParser do
   subject { CommaParser.new(data) }
   let(:data) do
@@ -181,12 +189,13 @@ RSpec.describe CommaParser do
 
     context 'when data is not empty' do
       it 'returns an array with the parsed data' do
-        expect(subject.parse).to eq expected_result
+        expect(subject.parse).to match_array(expected_result)
       end
     end
   end
 end
 
+# Specs for the DollarSignParser
 RSpec.describe DollarSignParser do
   subject { DollarSignParser.new(data) }
   let(:data) do
@@ -207,7 +216,60 @@ RSpec.describe DollarSignParser do
 
     context 'when data is not empty' do
       it 'returns an array with the parsed data' do
-        expect(subject.parse).to eq expected_result
+        expect(subject.parse).to match_array(expected_result)
+      end
+    end
+  end
+end
+
+# Specs for the PeopleFactory
+RSpec.describe PeopleFactory, focus: true do
+  subject { PeopleFactory.build(data) }
+
+  let(:dollar_data) do
+    ['LA $ 10-4-1974 $ Nolan $ Rhiannon', 'NYC $ 12-1-1962 $ Bruen $ Rigoberto']
+  end
+
+  let(:comma_data) do
+    ['Mckayla, Atlanta, 5/29/1986', 'Elliot, New York City, 4/3/1947']
+  end
+
+  let(:expected_comma_result) do
+    ['Mckayla Atlanta 5/29/1986', 'Elliot New York City 4/3/1947']
+  end
+
+  let(:expected_dollar_result) do
+    ['Rhiannon Los Angeles 10/4/1974', 'Rigoberto New York City 12/1/1962']
+  end
+
+  describe '.build' do
+    context 'when only comma data is passed on the params' do
+      let(:data) { { comma: comma_data } }
+      it 'returns the parsed data' do
+        expect(subject).to match_array(expected_comma_result)
+      end
+    end
+
+    context 'when only dollar data is passed on the params' do
+      let(:data) { { dollar: dollar_data } }
+      it 'returns parsed data' do
+        expect(subject).to match_array(expected_dollar_result)
+      end
+    end
+
+    context 'when dollar and comma data is present' do
+      let(:data) { { comma: comma_data, dollar: dollar_data } }
+      it 'returns parsed data' do
+        expect(subject).to match_array(
+          expected_dollar_result + expected_comma_result
+        )
+      end
+    end
+
+    context 'when params is empty' do
+      let(:data) { {} }
+      it 'returns an empty array' do
+        expect(subject).to eq []
       end
     end
   end
